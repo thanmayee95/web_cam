@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Exam Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    #status { margin-top: 8px; }
+    video, canvas { border-radius: 8px; display: block; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h2>Online Exam</h2>
+  <video id="webcam" width="640" height="480" autoplay muted playsinline></video>
+  <canvas id="canvas" width="640" height="480"></canvas>
+  <p id="status">Monitoring...</p>
+
+n  <script>
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
+
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      return new Promise((resolve) => {
+        video.onloadedmetadata = () => resolve(video);
+      });
+    }
+
+    async function runDetection() {
+      try {
+        const model = await cocoSsd.load();
+        statusText.innerText = 'Model loaded. Monitoring started...';
+        console.log('coco-ssd model ready');
+
+        setInterval(async () => {
+          const predictions = await model.detect(video);
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          let phoneDetected = false;
+
+          predictions.forEach(pred => {
+            const [x, y, width, height] = pred.bbox;
+            const label = pred.class || pred.label || '';
+            ctx.strokeStyle = (label.toLowerCase().includes('phone') || label.toLowerCase().includes('cell')) ? 'red' : 'green';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, width, height);
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(x, y - 18, ctx.measureText(label).width + 8, 18);
+            ctx.fillStyle = '#fff';
+            ctx.fillText(label + ' (' + (pred.score || 0).toFixed(2) + ')', x + 4, y - 4);
+
+              // more sensitive detection for manual testing: lower score gate to 0.2
+              if ((label.toLowerCase().includes('phone') || label.toLowerCase().includes('cell')) && (pred.score || 0) > 0.2) {
+              phoneDetected = true;
+            }
+          });
+
+          console.log('coco-ssd predictions', predictions);
+
+          if (phoneDetected) {
+            statusText.innerText = '⚠️ Mobile detected! Test ended.';
+            alert('Mobile detected! Test terminated.');
+            // You can also redirect or disable exam inputs:
+            // window.location.href = 'exam_terminated.html';
+          }
+        }, 1500);
+      } catch (err) {
+        console.error('Model load failed', err);
+        statusText.innerText = 'Model failed to load: ' + (err.message || err);
+      }
+    }
+
+    setupCamera().then(runDetection).catch(err => {
+      console.error('Camera setup failed', err);
+      statusText.innerText = 'Camera setup failed: ' + (err.message || err);
+    });
+  </script>
+</body>
+</html>
